@@ -13,6 +13,8 @@ import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.View;
 
+import com.kongdy.hasee.noendlessruler.Utils;
+
 /**
  * 尺子，可动态绘制，需要调用增加方法
  * <h1>
@@ -65,11 +67,11 @@ public class DeadRuler extends View {
 		mRulingPaint = new Paint();
 		mUnitPaint = new TextPaint();
 		defaultPaint = new Paint();
-		
+
 		mLabelPaint.setAntiAlias(true);
 		mRulingPaint.setAntiAlias(true);
 		mUnitPaint.setAntiAlias(true);
-	
+
 		defaultPaint.setAntiAlias(true);
 		// 为了把控件独立起来，使用ps采集的rgb取色
 		mLabelPaint.setColor(Color.argb(255, 158, 158, 158));
@@ -78,7 +80,7 @@ public class DeadRuler extends View {
 		
 		mLabelPaint.setStrokeWidth(getRawSize(TypedValue.COMPLEX_UNIT_DIP, 2));
 		mRulingPaint.setStrokeWidth(getRawSize(TypedValue.COMPLEX_UNIT_DIP, 1));
-		
+
 		mUnitPaint.setTextAlign(Align.CENTER);
 		
 		mUnitPaint.setTextSize(getRawSize(TypedValue.COMPLEX_UNIT_SP, 8));
@@ -112,8 +114,7 @@ public class DeadRuler extends View {
 	@Override
 	protected void onDraw(Canvas canvas) {
 		super.onDraw(canvas);// 保留背景
-		canvas.saveLayer(0, 0, getMeasuredWidth(), getMeasuredHeight(), defaultPaint, Canvas.ALL_SAVE_FLAG);
-		
+		canvas.saveLayer(0, 0, getMeasuredWidth(), getMeasuredHeight(), defaultPaint, Canvas.CLIP_SAVE_FLAG);
 		if(mOrientation ==	NoEndlessRuler.ORIENTATION.HORIZONTAL ) {
 			canvas.drawLine(0, mHeight, mWidth, mHeight, mLabelPaint);
 			int tempWidth = mWidth;
@@ -145,7 +146,7 @@ public class DeadRuler extends View {
 				count ++;
 			}
 		}
-		
+
 		canvas.restore();
 	}
 	
