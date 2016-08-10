@@ -28,6 +28,9 @@ import com.kongdy.hasee.noendlessruler.R;
  * @author kongdy
  *         on 2016/8/10
  *         尺子控件
+ *         <h1>
+ *             无限尺寸的尺子，后期开发
+ *         </h1>
  */
 public class NoEndlessRuler extends View {
 
@@ -153,6 +156,7 @@ public class NoEndlessRuler extends View {
         scroller.setFriction(0.05f); // 摩擦力
 
         gestureDetector = new GestureDetector(getContext(), onGestureListener);
+        gestureDetector.setIsLongpressEnabled(false);
     }
 
     private void paintInit(Paint paint) {
@@ -165,7 +169,7 @@ public class NoEndlessRuler extends View {
     private GestureDetector.SimpleOnGestureListener onGestureListener = new GestureDetector.SimpleOnGestureListener() {
         @Override
         public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-            return super.onScroll(e1, e2, distanceX, distanceY);
+            return true;
         }
 
         @Override
@@ -173,9 +177,10 @@ public class NoEndlessRuler extends View {
 
             int mVelocityX = mOrientation == ORIENTATION.VERTICAL ? 0 : (int) -velocityX;
             int mVelocityY = mOrientation == ORIENTATION.HORIZONTAL ? 0 : (int) -velocityY;
-
+            scrollX = 0;
+            scrollY = 0;
             scroller.fling(0, 0, mVelocityX, mVelocityY, -0x7FFFFFFF, 0x7FFFFFFF, 0, 0);
-
+            setNextMessage(MESSAGE_SCROLL);
             return true;
         }
     };
@@ -189,27 +194,26 @@ public class NoEndlessRuler extends View {
             scroller.computeScrollOffset();
             int mScrollX = scroller.getCurrX();
             int mScrollY = scroller.getCurrY();
-            int deltaX = mScrollX - scrollX;
-            int deltaY = mScrollY - scrollY;
+            int deltaX = scrollX - mScrollX;
+            int deltaY = scrollY - mScrollY;
             scrollX = mScrollX;
             scrollY = mScrollY;
 
             doScroll(deltaX, deltaY);
 
-            scrollOffset = deltaX > deltaY ? deltaX : deltaY;
-
-            if (Math.abs(mScrollX - scroller.getFinalX()) < MIN_SCROLL_VALUE &&
-                    Math.abs(mScrollY - scroller.getFinalY()) < MIN_SCROLL_VALUE) {
+            if (Math.abs(mScrollX - scroller.getFinalX()) < MIN_SCROLL_VALUE && mOrientation == ORIENTATION.HORIZONTAL) {
                 lastMotionX = scroller.getFinalX();
+                scroller.forceFinished(true);
+            } else if (Math.abs(mScrollY - scroller.getFinalY()) < MIN_SCROLL_VALUE && mOrientation == ORIENTATION.VERTICAL) {
                 lastMotionY = scroller.getFinalY();
                 scroller.forceFinished(true);
             }
 
             if (!scroller.isFinished()) {
-                setNextMessage(MESSAGE_SCROLL);
+                setNextMessage(msg.what);
             } else if (msg.what == MESSAGE_SCROLL) {
-                setNextMessage(MESSAGE_JUSTIFY);
                 justify();
+                setNextMessage(MESSAGE_JUSTIFY);
             } else {
                 finished();
             }
@@ -236,6 +240,7 @@ public class NoEndlessRuler extends View {
             }
             scrollXY(scrollX, scrollY, 0);
         }
+
     }
 
 
@@ -264,6 +269,12 @@ public class NoEndlessRuler extends View {
             scrollOffset += deltaX;
         }
 
+        int offsetCount = scrollOffset / rulerSpace;
+        if (0 != offsetCount) {
+            currentValue -= offsetCount;
+            scrollOffset -= offsetCount * rulerSpace;
+        }
+
         invalidate();
     }
 
@@ -279,20 +290,24 @@ public class NoEndlessRuler extends View {
 
 
     private void scrollX(int distance, int duration) {
+        scrollX = 0;
         scroller.forceFinished(true);
-        scroller.startScroll(0, 0, distance, 0, duration);
+        scroller.startScroll(0, 0, distance, 0, duration != 0 ? duration : 300);
         setNextMessage(MESSAGE_SCROLL);
     }
 
     private void scrollY(int distance, int duration) {
+        scrollY = 0;
         scroller.forceFinished(true);
-        scroller.startScroll(0, 0, 0, distance, duration);
+        scroller.startScroll(0, 0, 0, distance, duration != 0 ? duration : 300);
         setNextMessage(MESSAGE_SCROLL);
     }
 
     private void scrollXY(int distanceX, int distanceY, int duration) {
+        scrollX = 0;
+        scrollY = 0;
         scroller.forceFinished(true);
-        scroller.startScroll(0, 0, distanceX, distanceY, duration);
+        scroller.startScroll(0, 0, distanceX, distanceY, duration != 0 ? duration : 300);
         setNextMessage(MESSAGE_SCROLL);
     }
 
@@ -306,19 +321,19 @@ public class NoEndlessRuler extends View {
         if (currentValue < minValue) {
             outRange = (minValue - currentValue) * rulerSpace;
         } else if (currentValue > maxValue) {
-            outRange = (currentValue - minValue) * rulerSpace;
+            outRange = (maxValue - currentValue) * rulerSpace;
         }
         if (0 != outRange) {
             scrollOffset = 0;
             if (mOrientation == ORIENTATION.VERTICAL) {
-                scrollY(-outRange, 100);
+                scrollY(outRange, 100);
             } else {
-                scrollX(-outRange, 100);
+                scrollX(outRange, 100);
             }
-            return false;
+            return true;
         }
 
-        return true;
+        return false;
     }
 
 
@@ -391,10 +406,12 @@ public class NoEndlessRuler extends View {
         super.onDraw(canvas);
         canvas.saveLayer(0, 0, getMeasuredWidth(), getMeasuredHeight(), rulerPaint, Canvas.ALL_SAVE_FLAG);
 
+        int halfCount = (int) Math.ceil(mWidth / 2f / rulerSpace);
+
         if (mOrientation == ORIENTATION.VERTICAL) {
             drawVertical(canvas);
         } else {
-            drawHorizontal(canvas);
+            drawHorizontal(canvas, halfCount);
         }
         drawPointer(canvas);
         canvas.restore();
@@ -412,22 +429,62 @@ public class NoEndlessRuler extends View {
     /**
      * 画水平尺子
      */
-    private void drawHorizontal(Canvas canvas) {
+    private void drawHorizontal(Canvas canvas, int halfCount) {
         canvas.drawLine(0, mHeight, mWidth, mHeight, labelPaint);
-        int tempValue = minValue;
-        while (tempValue < maxValue) {
-            int startX = scrollOffset+tempValue * rulerSpace;
-            if (tempValue % 5 == 0 || tempValue == 0) {
-                canvas.drawLine(startX, mHeight - labelPaint.getStrokeWidth() / 2, startX,
-                        mHeight - (rulerDistance * 4) / 3 - labelPaint.getStrokeWidth() / 2, rulerPaint);
-                canvas.drawText(String.valueOf(tempValue), startX, rulerTextPaint.getFontSpacing(),
-                        rulerTextPaint);
-            } else {
-                canvas.drawLine(startX, mHeight - labelPaint.getStrokeWidth() / 2, startX,
-                        mHeight - rulerDistance - labelPaint.getStrokeWidth() / 2, rulerPaint);
+        // right
+        float startX;
+        int value;
+        for (int i = 0; i < halfCount; i++) {
+            startX = scrollOffset + i * rulerSpace + mWidth / 2f;
+            value = currentValue + i;
+            if (startX <= mWidth && value >= minValue && value <= maxValue) {
+                if (value % 5 == 0 || value == 0) {
+                    canvas.drawLine(startX, mHeight - labelPaint.getStrokeWidth() / 2, startX,
+                            mHeight - (rulerDistance * 4) / 3 - labelPaint.getStrokeWidth() / 2, rulerPaint);
+                    canvas.drawText(String.valueOf(value), startX, rulerTextPaint.getFontSpacing(),
+                            rulerTextPaint);
+                } else {
+                    canvas.drawLine(startX, mHeight - labelPaint.getStrokeWidth() / 2, startX,
+                            mHeight - rulerDistance - labelPaint.getStrokeWidth() / 2, rulerPaint);
+                }
             }
-            tempValue += 1;
+
+            // left
+            startX = mWidth / 2f - i * rulerSpace + scrollOffset;
+            value = currentValue - i;
+            if (startX > getPaddingLeft() && value >= minValue && value <= maxValue) {
+                if (value % 5 == 0 || value == 0) {
+                    canvas.drawLine(startX, mHeight - labelPaint.getStrokeWidth() / 2, startX,
+                            mHeight - (rulerDistance * 4) / 3 - labelPaint.getStrokeWidth() / 2, rulerPaint);
+                    canvas.drawText(String.valueOf(value), startX, rulerTextPaint.getFontSpacing(),
+                            rulerTextPaint);
+                } else {
+                    canvas.drawLine(startX, mHeight - labelPaint.getStrokeWidth() / 2, startX,
+                            mHeight - rulerDistance - labelPaint.getStrokeWidth() / 2, rulerPaint);
+                }
+            }
+
         }
+
+
+//        int tempWidth = mWidth;
+//        int tempValue = currentValue + (mWidth / 2) / rulerSpace;
+//        while (tempWidth > 0) {
+//            if (tempValue > minValue && tempValue < maxValue) {
+//                int startX = scrollOffset + tempValue * rulerSpace;
+//                if (tempValue % 5 == 0 || tempValue == 0) {
+//                    canvas.drawLine(startX, mHeight - labelPaint.getStrokeWidth() / 2, startX,
+//                            mHeight - (rulerDistance * 4) / 3 - labelPaint.getStrokeWidth() / 2, rulerPaint);
+//                    canvas.drawText(String.valueOf(tempValue), startX, rulerTextPaint.getFontSpacing(),
+//                            rulerTextPaint);
+//                } else {
+//                    canvas.drawLine(startX, mHeight - labelPaint.getStrokeWidth() / 2, startX,
+//                            mHeight - rulerDistance - labelPaint.getStrokeWidth() / 2, rulerPaint);
+//                }
+//                tempValue -= 1;
+//                tempWidth = tempValue * rulerSpace;
+//            }
+//        }
     }
 
     /**
@@ -437,7 +494,7 @@ public class NoEndlessRuler extends View {
         canvas.drawLine(0, 0, 0, mHeight, labelPaint);
         int tempValue = minValue;
         while (tempValue < maxValue) {
-            int startY = scrollOffset+tempValue * rulerSpace;
+            int startY = scrollOffset + tempValue * rulerSpace + mHeight / 2;
             if (tempValue % 5 == 0 || tempValue == 0) {
                 canvas.drawLine(labelPaint.getStrokeWidth() / 2, startY, labelPaint.getStrokeWidth() / 2 +
                         (rulerDistance * 4) / 3, startY, rulerPaint);
@@ -456,33 +513,38 @@ public class NoEndlessRuler extends View {
             case MotionEvent.ACTION_DOWN:
                 lastMotionX = event.getX();
                 lastMotionY = event.getY();
+                scroller.forceFinished(true);
                 clearMessage();
                 break;
             case MotionEvent.ACTION_MOVE:
-                if(getParent() != null) {
+                if (getParent() != null) {
                     getParent().requestDisallowInterceptTouchEvent(false);
                 }
                 int delayY = 0;
                 int delayX = 0;
                 if (mOrientation == ORIENTATION.VERTICAL) {
                     final float motionY = event.getY();
-                    delayY = (int) (lastMotionY - motionY);
+                    delayY = (int) (motionY - lastMotionY);
                     lastMotionY = motionY;
                 } else {
                     final float motionX = event.getX();
-                    delayX = (int) (lastMotionX - motionX);
+                    delayX = (int) (motionX - lastMotionX);
                     lastMotionX = motionX;
                 }
-                doScroll(delayX,delayY);
+
+                if (delayX != 0 || delayY != 0) {
+                    doScroll(delayX, delayY);
+                }
+
                 break;
             case MotionEvent.ACTION_CANCEL:
             case MotionEvent.ACTION_UP:
-                if(getParent() != null) {
+                if (getParent() != null) {
                     getParent().requestDisallowInterceptTouchEvent(false);
                 }
                 break;
         }
-        if(!gestureDetector.onTouchEvent(event) && event.getAction() == MotionEvent.ACTION_UP){
+        if (!gestureDetector.onTouchEvent(event) && event.getAction() == MotionEvent.ACTION_UP) {
             justify();
         }
         return true;
