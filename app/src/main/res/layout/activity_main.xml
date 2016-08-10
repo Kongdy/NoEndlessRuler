@@ -7,13 +7,25 @@
     android:paddingLeft="@dimen/activity_horizontal_margin"
     android:paddingRight="@dimen/activity_horizontal_margin"
     android:paddingTop="@dimen/activity_vertical_margin"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     tools:context="com.kongdy.hasee.noendlessruler.MainActivity">
 
    <com.kongdy.hasee.noendlessruler.view.NoEndlessRuler
        android:layout_width="match_parent"
-       android:layout_height="50dp">
+       android:layout_height="50dp"
+        app:ner_orientation="horizontal"
+       android:layout_alignParentBottom="true"
+       android:background="@android:color/holo_orange_light"
+       />
 
-   </com.kongdy.hasee.noendlessruler.view.NoEndlessRuler>
+    <!--<ScrollView
+        android:layout_width="wrap_content"
+        android:layout_height="match_parent">
+        <com.kongdy.hasee.noendlessruler.view.DeadRuler
+        android:layout_width="50dp"
+        android:layout_height="match_parent">
 
+    </com.kongdy.hasee.noendlessruler.view.DeadRuler>
+ </ScrollView>-->
 
 </RelativeLayout>

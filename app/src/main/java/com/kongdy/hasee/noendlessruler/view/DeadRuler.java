@@ -32,7 +32,7 @@ public class DeadRuler extends View {
 	
 	private Paint defaultPaint;
 	
-	private NoEndlessRuler.ORIENTATION mOrientation;
+	private NoEndlessRuler1.ORIENTATION mOrientation;
 	
 	private int mWidth;
 	private int mHeight;
@@ -59,7 +59,7 @@ public class DeadRuler extends View {
 	}
 	
 	private void init() {
-		setmOrientation(NoEndlessRuler.ORIENTATION.HORIZONTAL);
+		setmOrientation(NoEndlessRuler1.ORIENTATION.VERTICAL);
 		
 		maxValue = 0;
 		
@@ -93,29 +93,29 @@ public class DeadRuler extends View {
 	
 	@Override
 	public void layout(int l, int t, int r, int b) {
-		if(mOrientation == NoEndlessRuler.ORIENTATION.HORIZONTAL) {
+		if(mOrientation == NoEndlessRuler1.ORIENTATION.HORIZONTAL) {
 			l = getPaddingLeft();
 			r = (int) (Utils.screenWidth_*1.2)-getPaddingRight();
 		} else {
 			t = getPaddingTop();
-			b =  (int) (Utils.screenWidth_*1.2)-getPaddingRight();
+			b =  (int) (Utils.screenHeight_*1.2)-getPaddingBottom();
 		}
 		super.layout(l, t, r, b);
 	}
 
-	public NoEndlessRuler.ORIENTATION getmOrientation() {
+	public NoEndlessRuler1.ORIENTATION getmOrientation() {
 		return mOrientation;
 	}
 
-	public void setmOrientation(NoEndlessRuler.ORIENTATION mOrientation) {
+	public void setmOrientation(NoEndlessRuler1.ORIENTATION mOrientation) {
 		this.mOrientation = mOrientation;
 	}
 	
 	@Override
 	protected void onDraw(Canvas canvas) {
 		super.onDraw(canvas);// 保留背景
-		canvas.saveLayer(0, 0, getMeasuredWidth(), getMeasuredHeight(), defaultPaint, Canvas.CLIP_SAVE_FLAG);
-		if(mOrientation ==	NoEndlessRuler.ORIENTATION.HORIZONTAL ) {
+		canvas.saveLayer(0, 0, mWidth, mHeight, defaultPaint, Canvas.CLIP_SAVE_FLAG);
+		if(mOrientation ==	NoEndlessRuler1.ORIENTATION.HORIZONTAL ) {
 			canvas.drawLine(0, mHeight, mWidth, mHeight, mLabelPaint);
 			int tempWidth = mWidth;
 			int count = 0;

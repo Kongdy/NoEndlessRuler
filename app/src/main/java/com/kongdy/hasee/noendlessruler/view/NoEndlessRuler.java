@@ -1,257 +1,510 @@
 package com.kongdy.hasee.noendlessruler.view;
 
+import android.annotation.TargetApi;
 import android.content.Context;
+import android.content.res.TypedArray;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Message;
+import android.text.TextPaint;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.util.TypedValue;
+import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewConfiguration;
-import android.view.ViewGroup;
-import android.widget.FrameLayout;
+import android.widget.Scroller;
+
+import com.kongdy.hasee.noendlessruler.R;
+
 
 /**
- * 尺子,无限瀑布流
  * @author kongdy
- * @date 2016-07-12 20:13
- * @TIME 20:13
- **/
+ *         on 2016/8/10
+ *         尺子控件
+ */
+public class NoEndlessRuler extends View {
 
-public class NoEndlessRuler extends FrameLayout {
+    private final static String TAG = "NoEndlessRuler";
+
+    // 滑动计算
+    private Scroller scroller;
 
     private int mHeight;
     private int mWidth;
+    private int pointerWidth;
+    private int pointerHeight;
+    private int rulerDistance;
+    private int rulerSpace;
+
+    private float rulerTextSize;
+
+    private int maxValue = -1;
+    private int minValue;
+    private int currentValue = -1;
+    private int scrollOffset; // 滑动偏移量
 
     private ORIENTATION mOrientation;
 
-    private boolean beginDraged = false;
+    /**
+     * 刻度画笔
+     **/
+    private Paint rulerPaint;
+    /**
+     * 刻度数字
+     **/
+    private TextPaint rulerTextPaint;
+    /**
+     * 底部line
+     **/
+    private Paint labelPaint;
+    /**
+     * 指针
+     **/
+    private Bitmap pointer;
 
-    private float mLastMotionX;
-    private float mLastMotionY;
+    private float lastMotionX;
+    private float lastMotionY;
 
-    private float mTouSlop;// 最小滑动阀值
-    private float mOverscrollDistance;
+    private int scrollX;
+    private int scrollY;
 
-    private int mScrollY;
-    private int mScrollX;
+    /**
+     * 滑动惯性持续时间
+     */
+    private static final int SCROLL_DURATION = 300;
 
-    private Paint mPointerPaint; // 指针画笔
+    private GestureDetector gestureDetector;
 
-    private DeadRuler ruler;
+    private final static int MESSAGE_SCROLL = 1;
+    private final static int MESSAGE_JUSTIFY = 2;
+    /**
+     * 最小滑动阀值
+     **/
+    private final static int MIN_SCROLL_VALUE = 1;
 
-    private int pointerId;
+    /**
+     * 指针资源id
+     **/
+    private int pointId;
 
-    public NoEndlessRuler(Context context, AttributeSet attrs, int defStyleAttr) {
-        super(context, attrs, defStyleAttr);
-        init();
+    public NoEndlessRuler(Context context) {
+        super(context);
+        init(null);
     }
 
     public NoEndlessRuler(Context context, AttributeSet attrs) {
         super(context, attrs);
-        init();
+        init(attrs);
     }
 
-    public NoEndlessRuler(Context context) {
-        super(context);
-        init();
+    public NoEndlessRuler(Context context, AttributeSet attrs, int defStyleAttr) {
+        super(context, attrs, defStyleAttr);
+        init(attrs);
     }
 
-    private void init() {
-        ViewConfiguration configuration = ViewConfiguration.get(getContext());
-        mTouSlop = configuration.getScaledPagingTouchSlop();
-        mOverscrollDistance = configuration.getScaledOverscrollDistance();
-
-        pointerId = 1;
-
-        ruler = new DeadRuler(getContext());
-        // 默认水平滑动
-        setmOrientation(ORIENTATION.HORIZONTAL);
-
-        addView(ruler, ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-
-        mPointerPaint = new Paint();
-
-        mPointerPaint.setAntiAlias(true);
-
-        mPointerPaint.setColor(Color.argb(255, 250, 124, 0));
-
-        mPointerPaint
-                .setStrokeWidth(getRawSize(TypedValue.COMPLEX_UNIT_DIP, 2));
-
-        mPointerPaint.setStyle(Paint.Style.STROKE);
+    @TargetApi(Build.VERSION_CODES.LOLLIPOP)
+    public NoEndlessRuler(Context context, AttributeSet attrs, int defStyleAttr, int defStyleRes) {
+        super(context, attrs, defStyleAttr, defStyleRes);
+        init(attrs);
     }
 
-    @Override
-    protected void measureChildWithMargins(View child,
-                                           int parentWidthMeasureSpec, int widthUsed,
-                                           int parentHeightMeasureSpec, int heightUsed) {
-        if (mOrientation == ORIENTATION.VERTICAL) {
-            final MarginLayoutParams marginLayoutParams = (MarginLayoutParams) child
-                    .getLayoutParams();
-            child.measure(parentWidthMeasureSpec, MeasureSpec.makeMeasureSpec(
-                    marginLayoutParams.topMargin
-                            + marginLayoutParams.bottomMargin,
-                    MeasureSpec.UNSPECIFIED));
+
+    private void init(AttributeSet attrs) {
+        TypedArray a = getContext().obtainStyledAttributes(attrs, R.styleable.NoEndlessRuler);
+        int orientation = a.getInteger(R.styleable.NoEndlessRuler_ner_orientation, 2);
+        pointId = a.getResourceId(R.styleable.NoEndlessRuler_ner_point_style, -1);
+        a.recycle();
+
+        if (orientation == 1) {
+            mOrientation = ORIENTATION.VERTICAL;
         } else {
-            final MarginLayoutParams marginLayoutParams = (MarginLayoutParams) child
-                    .getLayoutParams();
-            child.measure(MeasureSpec.makeMeasureSpec(
-                    marginLayoutParams.leftMargin
-                            + marginLayoutParams.rightMargin,
-                    MeasureSpec.UNSPECIFIED), parentHeightMeasureSpec);
+            mOrientation = ORIENTATION.HORIZONTAL;
         }
+
+        rulerPaint = new Paint();
+        labelPaint = new Paint();
+        rulerTextPaint = new TextPaint();
+
+        rulerPaint.setStyle(Paint.Style.FILL_AND_STROKE);
+        labelPaint.setStyle(Paint.Style.FILL_AND_STROKE);
+
+        rulerTextPaint.setTextAlign(Paint.Align.CENTER);
+
+        rulerPaint.setStrokeWidth(getRawSize(TypedValue.COMPLEX_UNIT_DIP, 1));
+        labelPaint.setStrokeWidth(getRawSize(TypedValue.COMPLEX_UNIT_DIP, 2));
+        rulerTextPaint.setTextSize(getRawSize(TypedValue.COMPLEX_UNIT_SP, 8));
+
+        rulerPaint.setColor(Color.BLACK);
+        labelPaint.setColor(Color.BLACK);
+        rulerTextPaint.setColor(Color.BLACK);
+
+        paintInit(rulerPaint);
+        paintInit(labelPaint);
+        paintInit(rulerTextPaint);
+
+        scroller = new Scroller(getContext());
+        scroller.setFriction(0.05f); // 摩擦力
+
+        gestureDetector = new GestureDetector(getContext(), onGestureListener);
+    }
+
+    private void paintInit(Paint paint) {
+        paint.setAntiAlias(true); // 锯齿
+        paint.setFilterBitmap(true); // 滤波
+        paint.setDither(true); // 防抖
+        paint.setSubpixelText(true); // 像素自处理
+    }
+
+    private GestureDetector.SimpleOnGestureListener onGestureListener = new GestureDetector.SimpleOnGestureListener() {
+        @Override
+        public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
+            return super.onScroll(e1, e2, distanceX, distanceY);
+        }
+
+        @Override
+        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
+
+            int mVelocityX = mOrientation == ORIENTATION.VERTICAL ? 0 : (int) -velocityX;
+            int mVelocityY = mOrientation == ORIENTATION.HORIZONTAL ? 0 : (int) -velocityY;
+
+            scroller.fling(0, 0, mVelocityX, mVelocityY, -0x7FFFFFFF, 0x7FFFFFFF, 0, 0);
+
+            return true;
+        }
+    };
+
+    /**
+     * 滑动处理
+     */
+    private Handler slideHandler = new Handler(new Handler.Callback() {
+        @Override
+        public boolean handleMessage(Message msg) {
+            scroller.computeScrollOffset();
+            int mScrollX = scroller.getCurrX();
+            int mScrollY = scroller.getCurrY();
+            int deltaX = mScrollX - scrollX;
+            int deltaY = mScrollY - scrollY;
+            scrollX = mScrollX;
+            scrollY = mScrollY;
+
+            doScroll(deltaX, deltaY);
+
+            scrollOffset = deltaX > deltaY ? deltaX : deltaY;
+
+            if (Math.abs(mScrollX - scroller.getFinalX()) < MIN_SCROLL_VALUE &&
+                    Math.abs(mScrollY - scroller.getFinalY()) < MIN_SCROLL_VALUE) {
+                lastMotionX = scroller.getFinalX();
+                lastMotionY = scroller.getFinalY();
+                scroller.forceFinished(true);
+            }
+
+            if (!scroller.isFinished()) {
+                setNextMessage(MESSAGE_SCROLL);
+            } else if (msg.what == MESSAGE_SCROLL) {
+                setNextMessage(MESSAGE_JUSTIFY);
+                justify();
+            } else {
+                finished();
+            }
+            return true;
+        }
+    });
+
+    private void justify() {
+        if (needScroll()) {
+            return;
+        }
+        if (Math.abs(scrollOffset) > MIN_SCROLL_VALUE) {
+            int scrollX;
+            int scrollY;
+            if (scrollOffset < -rulerSpace / 2) {
+                scrollX = mOrientation == ORIENTATION.VERTICAL ? 0 : scrollOffset + rulerSpace;
+                scrollY = mOrientation == ORIENTATION.HORIZONTAL ? 0 : scrollOffset + rulerSpace;
+            } else if (scrollOffset > rulerSpace / 2) {
+                scrollX = mOrientation == ORIENTATION.VERTICAL ? 0 : scrollOffset - rulerSpace;
+                scrollY = mOrientation == ORIENTATION.HORIZONTAL ? 0 : scrollOffset - rulerSpace;
+            } else {
+                scrollX = mOrientation == ORIENTATION.VERTICAL ? 0 : scrollOffset;
+                scrollY = mOrientation == ORIENTATION.HORIZONTAL ? 0 : scrollOffset;
+            }
+            scrollXY(scrollX, scrollY, 0);
+        }
+    }
+
+
+    private void finished() {
+        if (needScroll()) {
+            return;
+        }
+        scrollOffset = 0;
+        invalidate();
+    }
+
+
+    /**
+     * 开始滑动
+     *
+     * @param deltaX
+     * @param deltaY
+     */
+    private void doScroll(int deltaX, int deltaY) {
+        if (deltaX == 0 && deltaY == 0) {
+            return;
+        }
+        if (mOrientation == ORIENTATION.VERTICAL) {
+            scrollOffset += deltaY;
+        } else {
+            scrollOffset += deltaX;
+        }
+
+        invalidate();
+    }
+
+    private void setNextMessage(int MESSAGE) {
+        clearMessage();
+        slideHandler.sendEmptyMessage(MESSAGE);
+    }
+
+    private void clearMessage() {
+        slideHandler.removeMessages(MESSAGE_SCROLL);
+        slideHandler.removeMessages(MESSAGE_JUSTIFY);
+    }
+
+
+    private void scrollX(int distance, int duration) {
+        scroller.forceFinished(true);
+        scroller.startScroll(0, 0, distance, 0, duration);
+        setNextMessage(MESSAGE_SCROLL);
+    }
+
+    private void scrollY(int distance, int duration) {
+        scroller.forceFinished(true);
+        scroller.startScroll(0, 0, 0, distance, duration);
+        setNextMessage(MESSAGE_SCROLL);
+    }
+
+    private void scrollXY(int distanceX, int distanceY, int duration) {
+        scroller.forceFinished(true);
+        scroller.startScroll(0, 0, distanceX, distanceY, duration);
+        setNextMessage(MESSAGE_SCROLL);
     }
 
     /**
-     * <h1>
-     * 滑动处理</h1> 触摸事件写的比较简陋，以后完善
+     * 是否可以继续滑动
+     *
+     * @return
      */
-    @Override
-    public boolean dispatchTouchEvent(MotionEvent ev) {
-        switch (ev.getAction() & MotionEvent.ACTION_MASK) {
-            case MotionEvent.ACTION_DOWN:
-                mLastMotionX = ev.getRawX();
-                mLastMotionY = ev.getRawY();
-                break;
-            case MotionEvent.ACTION_MOVE:
-                // 两套滑动机制
-                int deltaX = 0;
-                int deltaY = 0;
-                int overScrollDistanceX = 0;
-                int overScrollDistanceY = 0;
-                int scrollRangeX = 0;
-                int scrollRangeY = 0;
-                if (mOrientation == ORIENTATION.HORIZONTAL) {
-                    final float moveX = ev.getRawX();
-                    deltaX = (int) (mLastMotionX - moveX);
-                    if (!beginDraged && Math.abs(deltaX) > mTouSlop) {
-                        beginDraged = true;
-                    }
-                    mScrollX = getScrollX() + deltaX;
-                    mScrollY = getScrollY();
-                    scrollRangeX = getScrollRangeX();
-                    overScrollDistanceX = (int) mOverscrollDistance;
-                } else {
-                    final float moveY = ev.getRawY();
-                    deltaY = (int) (mLastMotionY - moveY);
-                    if (!beginDraged && Math.abs(deltaY) > mTouSlop) {
-                        beginDraged = true;
-                    }
-                    mScrollX = getScrollX();
-                    mScrollY = getScrollY() + deltaY;
-                    scrollRangeY = getScrollRangeY();
-                    overScrollDistanceY = (int) mOverscrollDistance;
-                }
-                if (beginDraged) {
-                    overScrollBy(deltaX, deltaY, mScrollX, mScrollY, scrollRangeX,
-                            scrollRangeY, overScrollDistanceX, overScrollDistanceY,
-                            true);
-                }
-                break;
-            case MotionEvent.ACTION_UP:
-                beginDraged = false;
-                break;
-            default:
-                break;
+    private boolean needScroll() {
+        int outRange = 0;
+        if (currentValue < minValue) {
+            outRange = (minValue - currentValue) * rulerSpace;
+        } else if (currentValue > maxValue) {
+            outRange = (currentValue - minValue) * rulerSpace;
         }
+        if (0 != outRange) {
+            scrollOffset = 0;
+            if (mOrientation == ORIENTATION.VERTICAL) {
+                scrollY(-outRange, 100);
+            } else {
+                scrollX(-outRange, 100);
+            }
+            return false;
+        }
+
         return true;
     }
 
-    /**
-     * 滑动算法后期有待优化
-     */
-    @Override
-    protected void onOverScrolled(int scrollX, int scrollY, boolean clampedX,
-                                  boolean clampedY) {
-        // super.onOverScrolled(scrollX, scrollY, clampedX, clampedY);
-        super.scrollTo(scrollX, scrollY);
-    }
-
-    /**
-     * 判断是否到最底部
-     *
-     * @return
-     */
-    private int getScrollRangeX() {
-        int scrollRangX = 0;
-        if (getChildCount() > 0 && mOrientation == ORIENTATION.HORIZONTAL) {
-            View child = getChildAt(0);
-            scrollRangX = Math.max(0, child.getWidth()
-                    - (getWidth() - getPaddingLeft() - getPaddingRight()));
-        }
-        return scrollRangX;
-    }
-
-    /**
-     * 判断是否到最右边
-     *
-     * @return
-     */
-    private int getScrollRangeY() {
-        int scrollRangY = 0;
-        if (getChildCount() > 0 && mOrientation == ORIENTATION.VERTICAL) {
-            View child = getChildAt(0);
-            scrollRangY = Math.max(0, child.getHeight()
-                    - (getHeight() - getPaddingTop() - getPaddingBottom()));
-        }
-        return scrollRangY;
-    }
 
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
-        mWidth = w;
-        mHeight = h;
-        drawPointer();
+        mWidth = w - getPaddingLeft() - getPaddingRight();
+        mHeight = h - getPaddingBottom() - getPaddingTop();
+        initProperty();
+    }
+
+    private void initProperty() {
+
+        float defaultMinDistance = getRawSize(TypedValue.COMPLEX_UNIT_DIP, 2);
+        float defaultMaxDistance = mOrientation == ORIENTATION.VERTICAL ? 2 * mHeight / 3 : 2 * mWidth / 3;
+
+        pointerWidth = (int) (mOrientation == ORIENTATION.VERTICAL ? defaultMaxDistance : defaultMinDistance);
+        pointerHeight = (int) (mOrientation == ORIENTATION.HORIZONTAL ? defaultMaxDistance : defaultMinDistance);
+
+        // 设置pointer样式
+        if (pointId == -1) {
+            Paint tempPaint = new Paint();
+            tempPaint.setStyle(Paint.Style.FILL_AND_STROKE);
+            tempPaint.setColor(Color.rgb(250, 124, 0)); // 默认橘黄色
+            paintInit(tempPaint);
+            Bitmap result = Bitmap.createBitmap(pointerWidth, pointerHeight, Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(result);
+            canvas.drawRect(0, 0, pointerWidth, pointerHeight, tempPaint);
+            pointer = result;
+        } else {
+            pointer = BitmapFactory.decodeResource(getResources(), pointId);
+
+            // TODO: 2016/8/10 do some size fit
+//                     int outWidth = pointer.getWidth();
+//            int outHeight = pointer.getHeight();
+//
+//            float scale;
+//            float offsetX = 0;
+//            float offsetY = 0;
+//
+//            if(outWidth/pointerWidth > outHeight/pointerHeight) {
+//                scale = outWidth/pointerWidth;
+//                offsetX = (pointerWidth-outWidth*scale)*0.5f;
+//            } else {
+//                scale = outHeight/pointerHeight;
+//                offsetY = (pointerHeight-outHeight*scale)*0.5f;
+//            }
+//
+//            Matrix pointerMatrix = new Matrix();
+//            pointerMatrix.set(null);
+//
+//            pointerMatrix.postScale(scale,scale);
+//            pointerMatrix.postTranslate(offsetX,offsetY);
+
+            //pointer.
+        }
+
+        // 计算尺寸
+        if (maxValue == -1) {
+            maxValue = 200;
+        }
+        // 分割线间隔默认为4dp
+        rulerSpace = (int) getRawSize(TypedValue.COMPLEX_UNIT_DIP, 4);
+        //rulerSpace = (mOrientation == ORIENTATION.VERTICAL?mHeight:mWidth)/(maxValue/2);
+        rulerDistance = (mOrientation == ORIENTATION.VERTICAL ? mWidth : mHeight) / 2;
     }
 
     @Override
-    public void addView(View child) {
-        if (getChildCount() > 1) {
-            throw new IllegalStateException(
-                    "NoEndlessRuler can host only one direct child");
+    protected void onDraw(Canvas canvas) {
+        super.onDraw(canvas);
+        canvas.saveLayer(0, 0, getMeasuredWidth(), getMeasuredHeight(), rulerPaint, Canvas.ALL_SAVE_FLAG);
+
+        if (mOrientation == ORIENTATION.VERTICAL) {
+            drawVertical(canvas);
+        } else {
+            drawHorizontal(canvas);
         }
-        super.addView(child);
+        drawPointer(canvas);
+        canvas.restore();
+    }
+
+    /**
+     * 绘制指针
+     *
+     * @param canvas
+     */
+    private void drawPointer(Canvas canvas) {
+
+    }
+
+    /**
+     * 画水平尺子
+     */
+    private void drawHorizontal(Canvas canvas) {
+        canvas.drawLine(0, mHeight, mWidth, mHeight, labelPaint);
+        int tempValue = minValue;
+        while (tempValue < maxValue) {
+            int startX = scrollOffset+tempValue * rulerSpace;
+            if (tempValue % 5 == 0 || tempValue == 0) {
+                canvas.drawLine(startX, mHeight - labelPaint.getStrokeWidth() / 2, startX,
+                        mHeight - (rulerDistance * 4) / 3 - labelPaint.getStrokeWidth() / 2, rulerPaint);
+                canvas.drawText(String.valueOf(tempValue), startX, rulerTextPaint.getFontSpacing(),
+                        rulerTextPaint);
+            } else {
+                canvas.drawLine(startX, mHeight - labelPaint.getStrokeWidth() / 2, startX,
+                        mHeight - rulerDistance - labelPaint.getStrokeWidth() / 2, rulerPaint);
+            }
+            tempValue += 1;
+        }
+    }
+
+    /**
+     * 画垂直尺子
+     */
+    private void drawVertical(Canvas canvas) {
+        canvas.drawLine(0, 0, 0, mHeight, labelPaint);
+        int tempValue = minValue;
+        while (tempValue < maxValue) {
+            int startY = scrollOffset+tempValue * rulerSpace;
+            if (tempValue % 5 == 0 || tempValue == 0) {
+                canvas.drawLine(labelPaint.getStrokeWidth() / 2, startY, labelPaint.getStrokeWidth() / 2 +
+                        (rulerDistance * 4) / 3, startY, rulerPaint);
+                canvas.drawText(String.valueOf(tempValue), mWidth, startY, rulerTextPaint);
+            } else {
+                canvas.drawLine(labelPaint.getStrokeWidth() / 2, startY, labelPaint.getStrokeWidth() / 2 +
+                        rulerDistance, startY, rulerPaint);
+            }
+            tempValue += 1;
+        }
     }
 
     @Override
-    public void addView(View child, int index,
-                        android.view.ViewGroup.LayoutParams params) {
-        if (getChildCount() > 1) {
-            throw new IllegalStateException(
-                    "NoEndlessRuler can host only one direct child");
+    public boolean onTouchEvent(MotionEvent event) {
+        switch (event.getAction() & MotionEvent.ACTION_MASK) {
+            case MotionEvent.ACTION_DOWN:
+                lastMotionX = event.getX();
+                lastMotionY = event.getY();
+                clearMessage();
+                break;
+            case MotionEvent.ACTION_MOVE:
+                if(getParent() != null) {
+                    getParent().requestDisallowInterceptTouchEvent(false);
+                }
+                int delayY = 0;
+                int delayX = 0;
+                if (mOrientation == ORIENTATION.VERTICAL) {
+                    final float motionY = event.getY();
+                    delayY = (int) (lastMotionY - motionY);
+                    lastMotionY = motionY;
+                } else {
+                    final float motionX = event.getX();
+                    delayX = (int) (lastMotionX - motionX);
+                    lastMotionX = motionX;
+                }
+                doScroll(delayX,delayY);
+                break;
+            case MotionEvent.ACTION_CANCEL:
+            case MotionEvent.ACTION_UP:
+                if(getParent() != null) {
+                    getParent().requestDisallowInterceptTouchEvent(false);
+                }
+                break;
         }
-        super.addView(child, index, params);
+        if(!gestureDetector.onTouchEvent(event) && event.getAction() == MotionEvent.ACTION_UP){
+            justify();
+        }
+        return true;
     }
 
-    @Override
-    public void addView(View child, int width, int height) {
-        if (getChildCount() > 1) {
-            throw new IllegalStateException(
-                    "NoEndlessRuler can host only one direct child");
-        }
-        super.addView(child, width, height);
+
+    public float getRawSize(int unit, float value) {
+        DisplayMetrics metrics = getContext().getResources()
+                .getDisplayMetrics();
+        return TypedValue.applyDimension(unit, value, metrics);
     }
 
-    @Override
-    public void addView(View child, int index) {
-        if (getChildCount() > 1) {
-            throw new IllegalStateException(
-                    "NoEndlessRuler can host only one direct child");
-        }
-        super.addView(child, index);
+    public Paint getRulerPaint() {
+        return rulerPaint;
     }
 
-    @Override
-    public void addView(View child, android.view.ViewGroup.LayoutParams params) {
-        if (getChildCount() > 1) {
-            throw new IllegalStateException(
-                    "NoEndlessRuler can host only one direct child");
-        }
-        super.addView(child, params);
+    public TextPaint getRulerTextPaint() {
+        return rulerTextPaint;
+    }
+
+    public Paint getLabelPaint() {
+        return labelPaint;
     }
 
     /**
@@ -261,90 +514,6 @@ public class NoEndlessRuler extends FrameLayout {
      */
     public static enum ORIENTATION {
         VERTICAL, HORIZONTAL
-    }
-
-    public ORIENTATION getmOrientation() {
-        return mOrientation;
-    }
-
-    public void setmOrientation(ORIENTATION mOrientation) {
-        this.mOrientation = mOrientation;
-        ruler.setmOrientation(mOrientation);
-    }
-
-    /**
-     * 根据单位返回一个像素
-     *
-     * @param context
-     * @param unit
-     * @param value
-     * @return
-     */
-    public float getRawSize(int unit, float value) {
-        DisplayMetrics metrics = getContext().getResources()
-                .getDisplayMetrics();
-        return TypedValue.applyDimension(unit, value, metrics);
-    }
-
-    @Override
-    protected void onLayout(boolean changed, int left, int top, int right,
-                            int bottom) {
-        super.onLayout(changed, left, top, right, bottom);
-        View child = getChildAt(0);
-        // 置中
-        if (mOrientation == ORIENTATION.HORIZONTAL) {
-            super.setScrollX((Math.abs(getWidth() - child.getWidth())) / 2);
-        } else {
-            super.setScaleY((Math.abs(getHeight() - child.getHeight()) / 2));
-        }
-
-
-    }
-
-    /**
-     * 绘制指针
-     */
-    private void drawPointer() {
-        ViewGroup parent = ((ViewGroup)getParent());
-        for (int i = 0; i < parent.getChildCount(); i++) {
-            if(parent.getChildAt(i).getId() == pointerId) {
-                return;
-            }
-        }
-        View view = new View(getContext());
-        view.setBackgroundColor(Color.argb(255, 250, 124, 0));
-        view.setId(pointerId);
-        int l = 0;
-        int t = 0;
-        int r = 0;
-        int b = 0;
-        if (mOrientation == ORIENTATION.HORIZONTAL) {
-            l = (int) (getLeft() + mWidth / 2 - getRawSize(
-                    TypedValue.COMPLEX_UNIT_DIP, 1));
-            t = getTop() + mHeight / 3;
-            r = (int) (getLeft() + mWidth / 2 + getRawSize(
-                    TypedValue.COMPLEX_UNIT_DIP, 1));
-            b = getBottom() - ruler.getBottomLabelPadding();
-            parent.addView(view,new LayoutParams((int) getRawSize(
-                    TypedValue.COMPLEX_UNIT_DIP, 2), mHeight / 3));
-        } else {
-            l = getLeft() -ruler.getBottomLabelPadding();
-            t = (int) (getTop()+mHeight/2-getRawSize(
-                    TypedValue.COMPLEX_UNIT_DIP, 1));
-            r = getRight()-mWidth/3;
-            b = (int) (getBottom()-mHeight/2+getRawSize(
-                    TypedValue.COMPLEX_UNIT_DIP, 1));
-            parent.addView(view,new LayoutParams(mWidth/3, (int) getRawSize(
-                    TypedValue.COMPLEX_UNIT_DIP, 2)));
-        }
-
-
-        MarginLayoutParams marginLayoutParams = (MarginLayoutParams) view.getLayoutParams();
-        marginLayoutParams.leftMargin = l;
-        marginLayoutParams.rightMargin = r;
-        marginLayoutParams.topMargin = t;
-        marginLayoutParams.bottomMargin = b;
-        view.setLayoutParams(marginLayoutParams);
     }
 
 }
