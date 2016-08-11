@@ -10,11 +10,22 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     tools:context="com.kongdy.hasee.noendlessruler.MainActivity">
 
+
+   <TextView
+       android:id="@+id/text"
+       android:layout_width="wrap_content"
+       android:layout_height="wrap_content"
+       android:textSize="50sp"
+       android:layout_marginTop="50dp"
+       android:layout_centerHorizontal="true"
+       android:textColor="@color/colorPrimary"/>
+
+
    <com.kongdy.hasee.noendlessruler.view.NoEndlessRuler
-       android:layout_width="match_parent"
-       android:layout_height="50dp"
-        app:ner_orientation="horizontal"
-       android:layout_alignParentBottom="true"
+       android:id="@+id/ruler"
+       android:layout_width="50dp"
+       android:layout_height="match_parent"
+        app:ner_orientation="vertical"
        android:background="@android:color/holo_orange_light"
        />
 
